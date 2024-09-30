@@ -1,18 +1,13 @@
-from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
-from langchain_community.utilities import SQLDatabase
-
 import snowflake.connector
 import streamlit as st
-
 from agent import Agent
+from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 
 @st.cache_resource(ttl='5h')
-def get_db(username, password, account, warehouse, role):
+def get_snowflake_connection(username, password, account, warehouse, role):
     database = "SNOWFLAKE"
     schema = "ACCOUNT_USAGE"
-    snowflake_uri = f"snowflake://{username}:{password}@{account}/{database}/{schema}?warehouse={warehouse}&role={role}"
-    db = SQLDatabase.from_uri(snowflake_uri, view_support=True)
-    con = snowflake.connector.connect(
+    return snowflake.connector.connect(
         user=username,
         password=password,
         account=account,
@@ -21,11 +16,24 @@ def get_db(username, password, account, warehouse, role):
         warehouse=warehouse,
         role=role,
     )
-    return db, con
+
+def cortex_complete(messages):
+    cursor = st.session_state.snowflake_connection.cursor()
+    query = f"""
+    SELECT SNOWFLAKE.CORTEX.COMPLETE(
+        'mistral-7b',
+        {messages},
+        {{
+            'guardrails': true
+        }}
+    );
+    """
+    result = cursor.execute(query).fetchone()[0]
+    cursor.close()
+    return result
 
 st.set_page_config(page_title="Snow-Wise", page_icon="❄️")
 st.title("❄️ :blue[Snow-Wise]")
-
 st.write('AI agent to monitor & optimize Snowflake queries :rocket:')
 
 with st.sidebar:
@@ -38,14 +46,14 @@ with st.sidebar:
     snowflake_role = st.text_input("Snowflake Role", key="snowflake_role")
 
     if snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse:
-        db, con = get_db(
+        st.session_state.snowflake_connection = get_snowflake_connection(
             username=snowflake_username,
             password=snowflake_password,
             account=snowflake_account,
             warehouse=snowflake_warehouse,
             role=snowflake_role,
         )
-        agent_executor = Agent(db=db, con=con).get_executor()
+        agent_executor = Agent(cortex_function=cortex_complete, snowflake_connection=st.session_state.snowflake_connection).get_executor()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -70,24 +78,5 @@ if prompt := st.chat_input("I need help with finding the long running queries on
             "chat_history": st.session_state.messages
         }, {"callbacks": [st_callback]})
         st.markdown(response["output"])
+
     st.session_state.messages.append({"role": "assistant", "content": response["output"]})
-
-
-# ... (previous imports remain the same)
-
-from agent import Agent
-
-# ... (previous code remains the same)
-
-    if snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse:
-        db, con = get_db(
-            username=snowflake_username,
-            password=snowflake_password,
-            account=snowflake_account,
-            warehouse=snowflake_warehouse,
-            role=snowflake_role,
-        )
-        agent = Agent(db=db, con=con)
-        agent_executor = agent.get_executor()
-
-# ... (rest of the code remains the same)
