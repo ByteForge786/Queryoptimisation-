@@ -6,6 +6,7 @@ from langchain_core.callbacks import (
     CallbackManagerForToolRun,
 )
 import json
+from snowflake.connector import SnowflakeConnection
 
 class _InfoSnowflakeTableToolInput(BaseModel):
     table_names: str = Field(
@@ -21,7 +22,7 @@ class InfoSnowflakeTableTool(BaseTool):
     description: str = "Get the schema and sample rows for the specified Snowflake tables."
     args_schema: Type[BaseModel] = _InfoSnowflakeTableToolInput
 
-    snowflake_connection: any = Field(exclude=True)
+    snowflake_connection: SnowflakeConnection = Field(exclude=True)
 
     def _run(
         self,
@@ -96,7 +97,7 @@ class QueryExecutorTool(BaseTool):
     """
     args_schema: Type[BaseModel] = _QueryExecutorToolInput
 
-    snowflake_connection: any = Field(exclude=True)
+    snowflake_connection: SnowflakeConnection = Field(exclude=True)
 
     def _run(
         self,
@@ -113,7 +114,7 @@ class QueryExecutorTool(BaseTool):
             return f"Error: {e}", None
 
 class AgentToolkit(BaseToolkit):
-    snowflake_connection: any = Field(exclude=True)
+    snowflake_connection: SnowflakeConnection = Field(exclude=True)
     cortex_function: callable = Field(exclude=True)
 
     class Config:
