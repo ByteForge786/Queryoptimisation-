@@ -1,9 +1,27 @@
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 from langchain_community.utilities import SQLDatabase
 
+import snowflake.connector
 import streamlit as st
+
 from agent import Agent
-from your_snowflake_connector_file import Get_sf_data  # Import your Snowflake connector
+
+@st.cache_resource(ttl='5h')
+def get_db(username, password, account, warehouse, role):
+    database = "SNOWFLAKE"
+    schema = "ACCOUNT_USAGE"
+    snowflake_uri = f"snowflake://{username}:{password}@{account}/{database}/{schema}?warehouse={warehouse}&role={role}"
+    db = SQLDatabase.from_uri(snowflake_uri, view_support=True)
+    con = snowflake.connector.connect(
+        user=username,
+        password=password,
+        account=account,
+        database=database,
+        schema=schema,
+        warehouse=warehouse,
+        role=role,
+    )
+    return db, con
 
 st.set_page_config(page_title="Snow-Wise", page_icon="❄️")
 st.title("❄️ :blue[Snow-Wise]")
@@ -13,7 +31,6 @@ st.write('AI agent to monitor & optimize Snowflake queries :rocket:')
 with st.sidebar:
     st.title('Your Secrets')
     st.caption('Please use a role with SNOWFLAKE database privileges ([docs](https://docs.snowflake.com/en/sql-reference/account-usage#enabling-the-snowflake-database-usage-for-other-roles))')
-    
     snowflake_account = st.text_input("Snowflake Account", key="snowflake_account")
     snowflake_username = st.text_input("Snowflake Username", key="snowflake_username")
     snowflake_password = st.text_input("Snowflake Password", key="snowflake_password", type="password")
@@ -21,10 +38,14 @@ with st.sidebar:
     snowflake_role = st.text_input("Snowflake Role", key="snowflake_role")
 
     if snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse:
-        con = Get_sf_data  # Using your Snowflake connector
-
-        agent_executor = Agent(con=con).get_executor()  # Initialize the agent with Snowflake connector
-
+        db, con = get_db(
+            username=snowflake_username,
+            password=snowflake_password,
+            account=snowflake_account,
+            warehouse=snowflake_warehouse,
+            role=snowflake_role,
+        )
+        agent_executor = Agent(db=db, con=con).get_executor()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -33,7 +54,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("I need help with finding the long-running queries on my Snowflake"):
+if prompt := st.chat_input("I need help with finding the long running queries on my Snowflake"):
     if not (snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse):
         st.info("Please add the secrets to continue!")
         st.stop()
