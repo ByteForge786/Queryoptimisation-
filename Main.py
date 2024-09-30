@@ -1,0 +1,52 @@
+from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+from langchain_community.utilities import SQLDatabase
+
+import streamlit as st
+from agent import Agent
+from your_snowflake_connector_file import Get_sf_data  # Import your Snowflake connector
+
+st.set_page_config(page_title="Snow-Wise", page_icon="❄️")
+st.title("❄️ :blue[Snow-Wise]")
+
+st.write('AI agent to monitor & optimize Snowflake queries :rocket:')
+
+with st.sidebar:
+    st.title('Your Secrets')
+    st.caption('Please use a role with SNOWFLAKE database privileges ([docs](https://docs.snowflake.com/en/sql-reference/account-usage#enabling-the-snowflake-database-usage-for-other-roles))')
+    
+    snowflake_account = st.text_input("Snowflake Account", key="snowflake_account")
+    snowflake_username = st.text_input("Snowflake Username", key="snowflake_username")
+    snowflake_password = st.text_input("Snowflake Password", key="snowflake_password", type="password")
+    snowflake_warehouse = st.text_input("Snowflake Warehouse", key="snowflake_warehouse")
+    snowflake_role = st.text_input("Snowflake Role", key="snowflake_role")
+
+    if snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse:
+        con = Get_sf_data  # Using your Snowflake connector
+
+        agent_executor = Agent(con=con).get_executor()  # Initialize the agent with Snowflake connector
+
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+if prompt := st.chat_input("I need help with finding the long-running queries on my Snowflake"):
+    if not (snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse):
+        st.info("Please add the secrets to continue!")
+        st.stop()
+
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        st_callback = StreamlitCallbackHandler(st.container())
+        response = agent_executor.invoke({
+            "input": prompt,
+            "chat_history": st.session_state.messages
+        }, {"callbacks": [st_callback]})
+        st.markdown(response["output"])
+    st.session_state.messages.append({"role": "assistant", "content": response["output"]})
