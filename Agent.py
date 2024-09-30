@@ -3,6 +3,7 @@ from langchain.agents.agent import Agent as LangChainAgent
 from langchain.schema import AgentAction, AgentFinish
 import json
 from typing import Union
+from snowflake.connector import SnowflakeConnection
 
 from toolkit import AgentToolkit
 
@@ -39,8 +40,8 @@ class CortexAgent(LangChainAgent):
 class Agent:
     agent_executor: AgentExecutor
 
-    def __init__(self, cortex_function: callable, snowflake_connection: any):
-        toolkit = AgentToolkit(snowflake_connection=snowflake_connection)
+    def __init__(self, cortex_function: callable, snowflake_connection: SnowflakeConnection):
+        toolkit = AgentToolkit(snowflake_connection=snowflake_connection, cortex_function=cortex_function)
         tools = toolkit.get_tools()
 
         system_message = """
