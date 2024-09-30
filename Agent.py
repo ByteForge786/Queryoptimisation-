@@ -1,16 +1,59 @@
 from langchain.agents.agent import AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.language_models.base import BaseLanguageModel
+from langchain_community.utilities import SQLDatabase
 from snowflake.connector import SnowflakeConnection
+from langchain.agents.agent import Agent as LangChainAgent
+from langchain.schema import AgentAction, AgentFinish
+import json
+from typing import Union
 
 from toolkit import AgentToolkit
 
+class CortexAgent(LangChainAgent):
+    db: SQLDatabase
+    system_message: str
+
+    def run(self, input_string: str) -> Union[AgentAction, AgentFinish]:
+        prompt = self.create_prompt(input_string)
+        response = self.db.run(prompt)
+        return self.parse_response(response)
+
+    def create_prompt(self, input_string: str) -> str:
+        messages = [
+            {
+                'role': 'system',
+                'content': self.system_message
+            },
+            {
+                'role': 'user',
+                'content': input_string
+            }
+        ]
+        
+        query = f"""
+        SELECT SNOWFLAKE.CORTEX.COMPLETE(
+            'mistral-7b',
+            {json.dumps(messages)},
+            {{
+                'guardrails': true
+            }}
+        );
+        """
+        return query
+
+    def parse_response(self, response: str) -> Union[AgentAction, AgentFinish]:
+        if "Final Answer:" in response:
+            return AgentFinish({"output": response.split("Final Answer:")[-1].strip()}, "")
+        
+        tool_name = response.split(":")[0].strip()
+        tool_input = ":".join(response.split(":")[1:]).strip()
+        return AgentAction(tool_name, tool_input, response)
 
 class Agent:
     agent_executor: AgentExecutor
 
-    def __init__(self, con: SnowflakeConnection):
-        toolkit = AgentToolkit(con=con)
+    def __init__(self, db: SQLDatabase, con: SnowflakeConnection):
+        toolkit = AgentToolkit(db=db, con=con)
         tools = toolkit.get_tools()
 
         system_message = """
@@ -38,35 +81,18 @@ class Agent:
                 - Original vs. optimized query performance
                 - Metrics improved
                 - Any notable observations or recommendations for further action
+
+        When you need to use a tool, format your response as follows:
+        Tool Name: tool input
+
+        When you have a final response for the user, format your response as follows:
+        Final Answer: your response here
         """
 
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", system_message),
-                MessagesPlaceholder("chat_history", optional=True),
-                ("human", "{input}"),
-                MessagesPlaceholder("agent_scratchpad"),
-            ]
-        )
-
-        # Snowflake Cortex replaces OpenAI for inference
-        cortex_query = """
-        SELECT SNOWFLAKE.CORTEX.COMPLETE(
-            'mistral-7b',
-            [
-                {
-                    'role': 'user',
-                    'content': '{input}'
-                }
-            ],
-            {}
-        )
-        """
-
-        tools.insert(0, {"name": "Cortex", "tool": cortex_query})
+        cortex_agent = CortexAgent(system_message=system_message, db=db)
 
         self.agent_executor = AgentExecutor(
-            agent=None,  # Cortex-based agent replaces OpenAI agent
+            agent=cortex_agent,
             tools=tools,
             verbose=True,
         )
