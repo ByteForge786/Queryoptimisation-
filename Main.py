@@ -71,3 +71,23 @@ if prompt := st.chat_input("I need help with finding the long running queries on
         }, {"callbacks": [st_callback]})
         st.markdown(response["output"])
     st.session_state.messages.append({"role": "assistant", "content": response["output"]})
+
+
+# ... (previous imports remain the same)
+
+from agent import Agent
+
+# ... (previous code remains the same)
+
+    if snowflake_account and snowflake_username and snowflake_role and snowflake_password and snowflake_warehouse:
+        db, con = get_db(
+            username=snowflake_username,
+            password=snowflake_password,
+            account=snowflake_account,
+            warehouse=snowflake_warehouse,
+            role=snowflake_role,
+        )
+        agent = Agent(db=db, con=con)
+        agent_executor = agent.get_executor()
+
+# ... (rest of the code remains the same)
